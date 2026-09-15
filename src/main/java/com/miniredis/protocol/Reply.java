@@ -1,15 +1,11 @@
+package com.miniredis.protocol;
+
 /**
  * The vocabulary of our wire protocol, in one place.
  *
  * Every reply the server sends is a single line of text. Centralizing the exact
  * strings here means the format is defined once, and the tests can assert
  * against these same constants instead of hard-coding "(nil)" in ten places.
- *
- * The formats match the spec's examples:
- *   SET      -> OK
- *   GET hit  -> the value        GET miss -> (nil)
- *   DEL      -> 1 or 0           EXISTS   -> 1 or 0     (bare integers)
- *   PING     -> PONG
  */
 public final class Reply {
 

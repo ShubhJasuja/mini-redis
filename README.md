@@ -1,164 +1,173 @@
 # MiniRedis
 
-A tiny in-memory key–value database served over TCP, written from scratch in
-plain Java. No Redis, no Spring, no Netty, no database, no third-party
-libraries — just `ServerSocket`, `Socket`, threads, and the JDK.
+[![Build & Test](https://github.com/ShubhJasuja/mini-redis/actions/workflows/ci.yml/badge.svg)](https://github.com/ShubhJasuja/mini-redis/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-17%2B-blue.svg)
+![Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)
+![Tests](https://img.shields.io/badge/Tests-125%20Passing-brightgreen.svg)
 
-It speaks a simple line-based text protocol, holds data in memory, expires keys
-on a TTL, serves many clients at once, and shuts down cleanly.
+A tiny, high-performance in-memory key–value database served over TCP with **Append-Only File (AOF) durability**, written from scratch in pure Java. 
+
+No Spring, no Netty, no third-party libraries — built strictly with `ServerSocket`, raw `Socket` I/O, threads, and the Java 17 Standard Library.
 
 ```
-MiniRedis> SET name Shubh
+MiniRedis> SET user Alice
 OK
-MiniRedis> GET name
-Shubh
-MiniRedis> SET name Shubh EX 10
+MiniRedis> INCR visits
+1
+MiniRedis> SET session token_xyz EX 10
 OK
-MiniRedis> GET name          (after 10 seconds)
+MiniRedis> GET session           (after 10 seconds)
 (nil)
 ```
 
-## Running it
+---
 
-Two terminals. Start the server in the first:
+## Key Features
 
-```bash
-javac -d . *.java
-java MiniRedis
+* **TCP Wire Protocol**: Request/reply line-based text protocol served over custom port (default `6379`).
+* **High Concurrency**: Thread-per-connection architecture backed by an unbounded cached thread pool (`Executors.newCachedThreadPool`).
+* **Atomic Arithmetic**: Atomic `INCR` / `DECR` operations powered by `ConcurrentHashMap.compute()`, verified under stress tests of 200,000 concurrent writes across 8 worker threads.
+* **Dual Expiration Strategy (TTL)**: 
+  * **Lazy (Passive)**: Expired keys are detected and pruned on-demand during read operations.
+  * **Active (Background)**: A dedicated daemon thread (`ExpiryReaper`) periodically sweeps memory to prevent leaks from dead, unread keys.
+* **Monotonic Time**: Key expiration deadlines are computed using `System.nanoTime()` rather than wall-clock time, protecting against NTP adjustments and leap seconds.
+* **AOF Durability**: Mutating commands are continuously written to an Append-Only File (`appendonly.aof`). On reboot, the log is sequentially replayed to reconstruct the in-memory state.
+* **Graceful Socket Termination**: Active client sockets are tracked in a thread-safe registry. Shutdown gives connections a 1-second grace period before force-closing sockets to unblock threads parked in socket reads.
+* **Zero External Dependencies**: Production server has zero third-party JARs.
+
+---
+
+## Architecture
+
+```
+MiniRedis ─── Accept loop (ServerSocket:6379)
+   │
+   ├── Cached Thread Pool ─── Assigns one thread per client
+   │     │
+   │     └── ClientHandler ─── Reads TCP socket stream (client-N)
+   │           │
+   │           ├── CommandParser ──→ Command (immutable record)
+   │           │
+   │           └── CommandExecutor ──→ Reply
+   │                 ├── Database (ConcurrentHashMap<String, Entry>)
+   │                 └── PersistenceManager (Append-Only File: appendonly.aof)
+   │
+   ├── ExpiryReaper ─── Daemon thread sweeping expired keys every 100ms
+   │
+   └── ShutdownManager ─── Coordinates graceful stop, socket registry, & pool unwinding
 ```
 
-Then a client in the second:
+---
 
-```bash
-java MiniRedisClient
+## Quick Start
+
+### 1. Build & Run with Batch Scripts (Windows)
+
+Start the server:
+```cmd
+server.bat
 ```
 
-Both take optional arguments: `java MiniRedis 6380` to use another port, and
-`java MiniRedisClient 6380` (or `java MiniRedisClient <host> <port>`) to reach
-it. On Windows, `server.bat` and `client.bat` do the same thing including the
-JDK setup.
+In a second terminal, start the interactive CLI:
+```cmd
+client.bat
+```
 
-Default port is **6379**. Stop the server with **Ctrl-C**, or send `SHUTDOWN`
-from any client.
+Run the full test suite (125 assertions across 5 suites):
+```cmd
+test.bat
+```
 
-## Commands
+### 2. Build & Run with Maven
 
-| Command | Reply | Notes |
+Compile and test:
+```bash
+mvn clean test
+```
+
+Package executable JAR:
+```bash
+mvn package
+```
+
+Run server:
+```bash
+java -jar target/mini-redis-1.0.0.jar
+```
+
+---
+
+## Supported Commands
+
+| Command | Wire Reply | Description |
 |---|---|---|
-| `PING` / `PING <msg>` | `PONG` / `<msg>` | liveness check |
-| `SET <key> <value>` | `OK` | overwrites, no expiry |
-| `SET <key> <value> EX <seconds>` | `OK` | expires after N seconds |
-| `SET <key> <value> PX <millis>` | `OK` | same, in milliseconds |
-| `GET <key>` | value or `(nil)` | `(nil)` if missing or expired |
-| `DEL <key>` | `1` / `0` | 1 if it existed |
-| `EXISTS <key>` | `1` / `0` | |
-| `KEYS` | space-separated, or `(empty)` | live keys only |
-| `INCR <key>` / `DECR <key>` | the new number | starts at 0; atomic |
-| `TTL <key>` | seconds, `-1`, or `-2` | -1 = no expiry, -2 = missing |
-| `QUIT` | `BYE` | closes this connection |
-| `SHUTDOWN` | `OK` | stops the whole server gracefully |
+| `PING` / `PING <msg>` | `PONG` / `<msg>` | Liveness check / echo message |
+| `SET <key> <val>` | `OK` | Store key-value pair (persistent) |
+| `SET <key> <val> EX <sec>` | `OK` | Set with expiration in seconds |
+| `SET <key> <val> PX <ms>` | `OK` | Set with expiration in milliseconds |
+| `GET <key>` | `<val>` or `(nil)` | Retrieve value (`(nil)` if absent or expired) |
+| `DEL <key>` | `1` / `0` | Delete key (`1` if existed, `0` if absent) |
+| `EXISTS <key>` | `1` / `0` | Check key presence |
+| `INCR <key>` / `DECR <key>` | integer | Atomic increment/decrement (starts at 0 if missing) |
+| `KEYS` | space-separated keys | List all live keys |
+| `TTL <key>` | seconds, `-1`, `-2` | Remaining TTL (`-1` = persistent, `-2` = missing/expired) |
+| `QUIT` | `BYE` | Close client connection |
+| `SHUTDOWN` | `OK` | Gracefully terminate entire server |
 
-Errors come back as `(error) <reason>`, e.g.
-`(error) value is not an integer or out of range`.
+---
 
-Values cannot contain spaces — the protocol splits on whitespace, and quoting
-was deliberately left out to keep the parser honest and small.
-
-## Tests
-
-```bash
-javac -d . *.java test/*.java
-java RunAllTests
-```
-
-**117 assertions across 4 suites**, exit code 0 when everything passes
-(`test.bat` on Windows). No JUnit — `TestKit` is a ~70-line harness, because
-"Java only" should mean it.
-
-| Suite | Covers |
-|---|---|
-| `CommandParserTest` | tokenizing, case folding, whitespace, blank/null lines |
-| `DatabaseTest` | CRUD, INCR/DECR, overflow, expiry, **200 000 concurrent increments** |
-| `CommandExecutorTest` | every command's exact wire reply, arity and validation errors |
-| `ShutdownManagerTest` | socket registry, grace period, forced close of blocked handlers |
-
-## How it fits together
+## Project Structure
 
 ```
-MiniRedis ──── accept loop; one thread per client (cached pool)
-   │
-   ├── ClientHandler ──── one connection: read line → reply line
-   │        │
-   │        └── CommandParser ──→ Command ──→ CommandExecutor ──→ Reply
-   │                                                  │
-   ├── Database ─────────────────────────────────────┘   ConcurrentHashMap<String, Entry>
-   │        └── Entry (value + absolute deadline), TimeSource (injectable clock)
-   │
-   ├── ExpiryReaper ──── daemon thread; sweeps expired keys every 100 ms
-   │
-   └── ShutdownManager ── Ctrl-C and SHUTDOWN both funnel here
+.
+├── pom.xml                               # Maven project configuration
+├── .github/workflows/ci.yml             # GitHub Actions CI workflow (Ubuntu & Windows)
+├── server.bat / client.bat / test.bat   # Windows one-click scripts
+└── src/
+    ├── main/java/com/miniredis/
+    │   ├── MiniRedis.java               # Main entry point & accept loop
+    │   ├── MiniRedisClient.java         # Interactive REPL client
+    │   ├── core/
+    │   │   ├── Database.java            # Concurrent in-memory store
+    │   │   ├── Entry.java               # Immutable value & absolute deadline
+    │   │   ├── TimeSource.java          # Monotonic time abstraction
+    │   │   ├── ExpiryReaper.java        # Active background sweeper
+    │   │   └── PersistenceManager.java  # Append-Only File durability engine
+    │   ├── net/
+    │   │   ├── ClientHandler.java       # Per-connection socket session
+    │   │   └── ShutdownManager.java     # Graceful teardown & socket registry
+    │   ├── protocol/
+    │   │   ├── Command.java             # Parsed command record
+    │   │   ├── CommandParser.java       # Pure whitespace tokenizer
+    │   │   ├── CommandExecutor.java     # Command dispatcher & arity validator
+    │   │   └── Reply.java               # Standard wire reply constants
+    │   └── util/
+    │       └── Log.java                 # Structured timestamped logger
+    └── test/java/com/miniredis/
+        ├── TestKit.java                 # Zero-dependency assertion harness
+        ├── ManualClock.java             # Deterministic clock for TTL testing
+        ├── CommandParserTest.java       # Tokenizer test suite
+        ├── DatabaseTest.java            # Concurrency (200k incrs) & store tests
+        ├── CommandExecutorTest.java     # Protocol & error validation tests
+        ├── ShutdownManagerTest.java     # Graceful shutdown & socket force-close tests
+        ├── PersistenceTest.java         # AOF recovery & replay tests
+        ├── RunAllTests.java             # Standalone test runner
+        └── MiniRedisJupiterTest.java    # JUnit 5 adapter for Maven & CI
 ```
 
-**Class by class:**
+---
 
-- `MiniRedis` — binds the port, accepts connections, hands each to the pool.
-- `ClientHandler` — owns one conversation. Renames its thread to `client-N`
-  while it runs, because a pooled thread serves many clients over its life.
-- `CommandParser` — pure function, `String` → `Command`. No sockets, no state.
-- `CommandExecutor` — per-command knowledge: arity, validation, what it does.
-- `Database` — the store. Thread-safe via `ConcurrentHashMap`; `INCR` uses
-  `compute()` so read-modify-write is atomic.
-- `Entry` / `TimeSource` — a value plus an absolute deadline, read off an
-  injectable monotonic clock (which is what makes expiry testable in
-  microseconds rather than by sleeping).
-- `ExpiryReaper` — active expiration, so keys nobody reads can't leak.
-- `ShutdownManager` — the ordered stop sequence.
-- `Log` — `HH:mm:ss.SSS [TAG] [thread] message`.
+## Engineering Deep-Dive (Interview Notes)
 
-## Design notes
+1. **Why `ConcurrentHashMap.compute()` for `INCR`?**
+   A standard `map.get()` followed by `map.put()` is not atomic across multiple threads (classic check-then-act race condition). Under concurrent traffic, updates would be overwritten and lost. `compute()` evaluates the update atomically within the map's bin lock.
 
-**Thread per connection.** Each client gets a pool thread that blocks on
-`readLine()`. Simple and easy to reason about; it trades memory per connection
-for clarity. This is precisely the model Netty exists to replace, and seeing
-where it strains is part of the point.
+2. **Why `System.nanoTime()` instead of `System.currentTimeMillis()`?**
+   Wall-clock time can skew or jump backwards during NTP time synchronizations. A monotonic clock only progresses forward, guaranteeing reliable deadline calculations.
 
-**Two expiration mechanisms, because each covers the other's blind spot.**
-Lazy expiry (checked on every read) guarantees you can never *observe* an
-expired key, but never cleans a key nobody reads. The reaper thread guarantees
-memory doesn't leak, but a key can briefly linger between sweeps. Together
-they're airtight — the same design real Redis uses.
+3. **Why two expiration mechanisms?**
+   * *Lazy expiration* ensures clients never observe a stale key, but dead keys that are never queried would sit in RAM forever.
+   * *Active reaping* cleans out dead, unqueried keys in the background.
 
-**Absolute deadlines on a monotonic clock.** An entry stores *when* it dies, not
-"seconds remaining", so nothing has to tick. `System.nanoTime()` rather than
-wall-clock time, so an NTP jump or DST change can't resurrect a dead key.
-
-**Atomicity is not thread-safety.** A `ConcurrentHashMap` makes each *operation*
-safe, but `get` then `put` is still two operations — under load, increments
-vanish. `compute()` makes the whole read-modify-write atomic. The test asserts
-exactly 200 000 across 8 threads; a naive version loses ~75 % of them.
-
-**Graceful shutdown is bounded, not infinite.** Stop accepting → stop the reaper
-→ let in-flight commands finish → wait 1 second → then force. The forcing step
-matters: a handler blocked in `readLine()` cannot be interrupted, so every live
-socket is tracked and closed, which is what makes those reads return.
-
-## Layout
-
-```
-MiniRedis.java  ClientHandler.java  MiniRedisClient.java
-CommandParser.java  Command.java  CommandExecutor.java  Reply.java
-Database.java  Entry.java  TimeSource.java  ExpiryReaper.java
-ShutdownManager.java  Log.java
-test/    the four suites, TestKit, RunAllTests, ManualClock
-dev/     scaffolding used to demonstrate things during development, not part
-         of the deliverable (Probe, RaceDemo, RudeServer, ShutdownProbe)
-```
-
-## Limitations
-
-Deliberate, to keep the project small and readable:
-
-- values can't contain spaces (no quoting in the protocol)
-- data is memory-only; nothing survives a restart
-- no auth, no key patterns for `KEYS`, no data types beyond strings
-- one thread per connection, so many thousands of idle clients would be costly
+4. **Solving the Blocked Socket Read Problem on Shutdown:**
+   Java cannot interrupt a thread blocked on traditional blocking socket I/O via `Thread.interrupt()`. `ShutdownManager` tracks open sockets in a thread-safe registry (`liveClients`) and explicitly closes them after a 1-second grace period, forcing blocked `readLine()` calls to throw and unwind the worker threads.

@@ -1,15 +1,12 @@
+package com.miniredis;
+
+import com.miniredis.protocol.Command;
+import com.miniredis.protocol.CommandParser;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Unit tests for {@link CommandParser} - requirement 10, the parser half.
- *
- * No server, no socket, no Database: parsing is a pure function, so these tests
- * just call CommandParser.parse(...) and check what comes back. Run with:
- *     java CommandParserTest
- * Exit code is 0 if everything passed, 1 otherwise. run() is separate from
- * main() so RunAllTests can execute this suite without System.exit ending the
- * JVM before the other suites get a turn.
+ * Unit tests for {@link CommandParser}.
  */
 public class CommandParserTest {
 

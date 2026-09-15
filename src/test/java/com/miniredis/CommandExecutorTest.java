@@ -1,10 +1,11 @@
+package com.miniredis;
+
+import com.miniredis.core.Database;
+import com.miniredis.protocol.CommandExecutor;
+import com.miniredis.protocol.CommandParser;
+
 /**
- * Unit tests for {@link CommandExecutor} - bonus coverage beyond the two suites
- * requirement 10 asks for. These lock in the exact wire replies from the spec's
- * examples (OK, the value, (nil), 1, 0) so a later refactor cannot quietly
- * change what a client sees. Pure logic: an executor over a fresh Database.
- *
- * Run with:  java CommandExecutorTest
+ * Unit tests for {@link CommandExecutor}.
  */
 public class CommandExecutorTest {
 
@@ -53,7 +54,7 @@ public class CommandExecutorTest {
         t.eq("unknown command reported", "(error) unknown command 'FLUSHALL'",
                 run(ex, "FLUSHALL"));
 
-        // --- INCR / DECR (step 5) ---
+        // --- INCR / DECR ---
         CommandExecutor c = new CommandExecutor(new Database());
         t.eq("INCR on fresh key -> 1", "1", run(c, "INCR counter"));
         t.eq("INCR again -> 2", "2", run(c, "INCR counter"));
@@ -68,7 +69,7 @@ public class CommandExecutorTest {
         t.eq("DECR with no key -> arity error",
                 "(error) wrong number of arguments for 'decr'", run(c, "DECR"));
 
-        // --- SET with expiry + TTL (step 6), on a manual clock ---
+        // --- SET with expiry + TTL, on a manual clock ---
         ManualClock clock = new ManualClock();
         CommandExecutor xc = new CommandExecutor(new Database(clock));
         t.eq("SET k v EX 10 -> OK (now supported)", "OK", run(xc, "SET k v EX 10"));
@@ -98,7 +99,6 @@ public class CommandExecutorTest {
         return t;
     }
 
-    /** Parse a line and execute it, the same path a client line takes. */
     private static String run(CommandExecutor ex, String line) {
         return ex.execute(CommandParser.parse(line));
     }

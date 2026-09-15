@@ -1,14 +1,9 @@
+package com.miniredis;
+
 import java.util.Objects;
 
 /**
  * A tiny zero-dependency test harness.
- *
- * The project must stay "Java only, no libraries", so we cannot use JUnit. This
- * gives us just enough: named assertions, a pass/fail tally, and an exit code.
- * A test class is an ordinary program with a main() that creates a TestKit,
- * makes assertions, and ends with `System.exit(kit.done())`. done() returns 0
- * when everything passed and 1 otherwise, so a script (or CI) can tell success
- * from failure by the process exit code alone.
  */
 public final class TestKit {
 
@@ -36,6 +31,15 @@ public final class TestKit {
             pass(label);
         } else {
             fail(label, "expected true");
+        }
+    }
+
+    /** Assert that a condition is false. */
+    public void isFalse(String label, boolean condition) {
+        if (!condition) {
+            pass(label);
+        } else {
+            fail(label, "expected false");
         }
     }
 
@@ -73,8 +77,6 @@ public final class TestKit {
         System.out.println();
         return exitCode();
     }
-
-    // --- accessors, so RunAllTests can total up several suites in one JVM ---
 
     /** 0 if every assertion passed, 1 otherwise. Does not print. */
     public int exitCode() {

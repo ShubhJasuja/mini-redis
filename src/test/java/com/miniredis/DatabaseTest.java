@@ -1,10 +1,10 @@
+package com.miniredis;
+
+import com.miniredis.core.Database;
 import java.util.List;
 
 /**
- * Unit tests for {@link Database} - requirement 10, the database half.
- *
- * No server, no socket: Database is plain in-memory logic, so we exercise it by
- * calling its methods directly. Run with:  java DatabaseTest
+ * Unit tests for {@link Database}.
  */
 public class DatabaseTest {
 
@@ -54,7 +54,7 @@ public class DatabaseTest {
         keys.clear();
         t.eq("clearing the snapshot leaves store intact", 3, db.size());
 
-        // --- values may contain arbitrary characters (only keys are constrained) ---
+        // --- values may contain arbitrary characters ---
         db.set("k", "a value with, punctuation!");
         t.eq("value stored verbatim", "a value with, punctuation!", db.get("k"));
 
@@ -67,7 +67,7 @@ public class DatabaseTest {
         t.eq("decr below zero -> -1", -1L, n.incrBy("hits", -1));
         t.eq("stored value is the number as text", "-1", n.get("hits"));
 
-        // incr on a non-integer value throws (executor turns this into an error)
+        // incr on a non-integer value throws
         n.set("word", "Shubh");
         boolean threwNfe;
         try {
@@ -90,7 +90,7 @@ public class DatabaseTest {
         }
         t.isTrue("incr past Long.MAX_VALUE throws ArithmeticException", threwOverflow);
 
-        // --- the headline of step 5: concurrent incrBy loses nothing ---
+        // --- concurrent incrBy loses nothing ---
         Database shared = new Database();
         int threads = 8;
         int perThread = 25_000;
@@ -116,9 +116,7 @@ public class DatabaseTest {
         t.eq(threads + " threads x " + perThread + " incrs = exactly " + expected,
                 expected, Long.parseLong(shared.get("counter")));
 
-        // ================= expiration (step 6), via a manual clock =================
-        // A ManualClock means we never really sleep: we just move time forward.
-
+        // ================= expiration, via a manual clock =================
         ManualClock clock = new ManualClock();
         Database e = new Database(clock);
 
@@ -157,7 +155,7 @@ public class DatabaseTest {
         Database pdb = new Database(pClock);
         pdb.set("a", "1", 1_000);
         pdb.set("b", "2", 1_000);
-        pdb.set("c", "3");                             // persistent
+        pdb.set("c", "3");
         pClock.advance(2_000);
         t.eq("purgeExpired removes the 2 dead keys", 2, pdb.purgeExpired());
         t.eq("persistent key survives the purge", "3", pdb.get("c"));

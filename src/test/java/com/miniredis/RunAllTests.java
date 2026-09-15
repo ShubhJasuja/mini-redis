@@ -1,24 +1,16 @@
+package com.miniredis;
+
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Runs every MiniRedis test suite in one JVM and prints one verdict.
- *
- * Why this exists: `java CommandParserTest && java DatabaseTest && ...` works,
- * but it is four processes, four JVM startups, and a verdict you have to
- * assemble by eye. One command, one exit code, one total.
- *
- * This is why each suite exposes run() separately from main(): main() ends with
- * System.exit, which would kill this JVM after the first suite. run() returns
- * its TestKit instead, so the totals can be added up here.
- *
- * Run:  java RunAllTests        (exit code 0 = everything passed)
+ * Runs every MiniRedis test suite in one JVM and prints the overall verdict.
  */
 public class RunAllTests {
 
     public static void main(String[] args) throws Exception {
         System.out.println("=========================================");
-        System.out.println("  MiniRedis - full test suite");
+        System.out.println("  MiniRedis - Full Test Suite");
         System.out.println("=========================================");
         System.out.println();
 
@@ -27,6 +19,7 @@ public class RunAllTests {
         results.add(DatabaseTest.run());
         results.add(CommandExecutorTest.run());
         results.add(ShutdownManagerTest.run());
+        results.add(PersistenceTest.run());
 
         int passed = 0;
         int failed = 0;

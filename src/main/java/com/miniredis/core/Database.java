@@ -1,27 +1,17 @@
+package com.miniredis.core;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The in-memory key-value store, now with key expiration (step 6).
+ * The in-memory key-value store with active and passive key expiration.
  *
  * Values are wrapped in an {@link Entry} carrying an absolute expiry deadline.
- * Two mechanisms keep expiry correct AND tidy, exactly as real Redis does:
  *
- *   LAZY (passive)  - every read (get/exists/keys/ttl) checks the deadline. An
- *                     expired key is treated as absent and removed on the spot.
- *                     This guarantees a client can NEVER observe an expired key,
- *                     regardless of what any background thread is doing.
- *
- *   ACTIVE          - purgeExpired() sweeps out dead keys. Called periodically by
- *                     ExpiryReaper so that a key which is set-and-never-read-again
- *                     does not leak memory forever (lazy expiry alone never runs
- *                     for it, because nobody ever reads it).
- *
- * Time comes from an injected TimeSource so tests can fast-forward instead of
- * sleeping. Thread-safety is unchanged: ConcurrentHashMap, with compute() for
- * the read-modify-write in incrBy, and conditional remove(key, entry) for lazy
+ * Thread-safety is achieved via ConcurrentHashMap, with compute() for atomic
+ * read-modify-write in incrBy, and conditional remove(key, entry) for lazy
  * deletion so a concurrent SET is never clobbered.
  */
 public class Database {
@@ -64,7 +54,7 @@ public class Database {
 
     /** @return true if present and not expired. */
     public boolean exists(String key) {
-        return get(key) != null;   // reuse the lazy-expiry path
+        return get(key) != null;
     }
 
     /** Remove a key. @return true only if a LIVE (non-expired) key was removed. */
@@ -75,11 +65,7 @@ public class Database {
 
     /**
      * Atomically add {@code delta} to the integer at {@code key}, returning the
-     * new value. A missing OR expired key is treated as 0, so INCR on an expired
-     * key restarts at 1 and drops the old TTL. A live key keeps its existing TTL.
-     *
-     * @throws NumberFormatException if the current value is not an integer
-     * @throws ArithmeticException   if the result would overflow a long
+     * new value. Missing or expired keys start at 0.
      */
     public long incrBy(String key, long delta) {
         long now = clock.nowMillis();
@@ -88,10 +74,10 @@ public class Database {
             long expireAt;
             if (current == null || current.isExpired(now)) {
                 base = 0L;
-                expireAt = Entry.NEVER;          // expired/missing -> fresh, no TTL
+                expireAt = Entry.NEVER;
             } else {
                 base = Long.parseLong(current.value);
-                expireAt = current.expireAt;     // live -> keep its deadline
+                expireAt = current.expireAt;
             }
             return new Entry(Long.toString(Math.addExact(base, delta)), expireAt);
         });
@@ -112,8 +98,8 @@ public class Database {
 
     /**
      * Remaining time to live, in milliseconds.
-     * @return {@code >=0} millis left; {@code -1} if the key never expires;
-     *         {@code -2} if the key is missing or already expired.
+     * @return {@code >=0} millis left; {@code -1} if persistent;
+     *         {@code -2} if missing or already expired.
      */
     public long ttlMillis(String key) {
         Entry e = store.get(key);
@@ -132,14 +118,12 @@ public class Database {
 
     /**
      * Active expiration: remove every entry whose deadline has passed.
-     * @return how many keys were purged (for logging).
+     * @return how many keys were purged.
      */
     public int purgeExpired() {
         long now = clock.nowMillis();
         int purged = 0;
         for (Map.Entry<String, Entry> me : store.entrySet()) {
-            // remove(key, entry) is conditional, so a key re-SET after we read it
-            // (thus no longer expired) is left untouched.
             if (me.getValue().isExpired(now) && store.remove(me.getKey(), me.getValue())) {
                 purged++;
             }

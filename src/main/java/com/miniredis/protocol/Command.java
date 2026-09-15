@@ -1,3 +1,5 @@
+package com.miniredis.protocol;
+
 import java.util.List;
 
 /**
@@ -7,11 +9,6 @@ import java.util.List;
  * just "what did the client ask for". The compact constructor copies the args
  * into an unmodifiable list so a Command can be passed to any thread and can
  * never be mutated after parsing.
- *
- * Deliberately dumb: it does NOT know whether the arguments are valid for the
- * command (that GET needs exactly one, that INCR needs a key). Per-command rules
- * live in the executor (step 4). Keeping this class free of that knowledge is
- * what lets the parser be tested without a Database.
  */
 public record Command(String name, List<String> args) {
 

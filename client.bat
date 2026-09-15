@@ -6,5 +6,10 @@ REM     client.bat 6380       -> another port on this machine
 REM     client.bat host 6379  -> another machine
 cd /d "%~dp0"
 call "%~dp0env.bat" || exit /b 1
-javac -d . *.java || exit /b 1
-java MiniRedisClient %*
+
+if not exist target\classes mkdir target\classes
+dir /s /b src\main\java\*.java > "%TEMP%\miniredis_main_src.txt"
+javac -d target\classes @"%TEMP%\miniredis_main_src.txt" || (del "%TEMP%\miniredis_main_src.txt" & exit /b 1)
+del "%TEMP%\miniredis_main_src.txt"
+
+java -cp target\classes com.miniredis.MiniRedisClient %*
